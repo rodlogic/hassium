@@ -11,18 +11,30 @@
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_file_dir_job.h"
 #include "net/url_request/url_request_file_job.h"
+#include "net/url_request/url_request_http_job.h"
 
 namespace net {
 
-AppProtocolHandler::AppProtocolHandler(const base::FilePath& root)
-  :root_path_(root)
+AppProtocolHandler::AppProtocolHandler(const base::FilePath& root, const GURL& base_url)
+  :root_path_(root), base_url_(base_url)
 {
 }
 
 URLRequestJob* AppProtocolHandler::MaybeCreateJob(
     URLRequest* request, NetworkDelegate* network_delegate) const {
-  base::FilePath file_path;
   GURL url(request->url());
+
+  if( !base_url_.is_empty() ){
+	  url_canon::Replacements<char> repl;
+	  repl.SetScheme(base_url_.scheme().data(), url_parse::Component(0, base_url_.scheme().length()));
+	  repl.SetHost(base_url_.host().data(), url_parse::Component(0, base_url_.host().length()));
+	  repl.SetPort(base_url_.port().data(), url_parse::Component(0, base_url_.port().length()));
+	  url = url.ReplaceComponents(repl);
+
+	  return URLRequestHttpJob::Factory(request, network_delegate, base_url_.scheme());
+  }
+
+  base::FilePath file_path;
   url_canon::Replacements<char> replacements;
   replacements.SetScheme("file", url_parse::Component(0, 4));
   replacements.ClearHost();

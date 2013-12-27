@@ -25,6 +25,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/native_library.h"
 
 #include <string>
 
@@ -81,11 +82,18 @@ class Package {
   // Manifest string.
   std::string package_string() { return package_string_; }
 
+  GURL base_url();
+
+  bool LoadLibrary(const FilePath& libraryPath);
+  bool InitLibrary(const FilePath& path, std::string& main_url);
+  void UnloadLibrary();
+
  private:
   bool InitFromPath();
   void InitWithDefault();
   bool ExtractPath();
   bool ExtractPackage(const FilePath& zip_file, FilePath* where);
+  base::NativeLibrary _appLibrary;
 
   // Read chromium command line args from the package.json if specifed.
   void ReadChromiumArgs();

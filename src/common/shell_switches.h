@@ -25,6 +25,7 @@ extern const char kmWebkit[];
 extern const char kmWindow[];
 extern const char kmChromiumArgs[];
 extern const char kmJsFlags[];
+extern const char kmBaseUrl[];
 
 extern const char kmSingleInstance[];
 

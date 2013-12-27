@@ -114,6 +114,7 @@ ShellBrowserMainParts::ShellBrowserMainParts(
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
   content::RenderViewHost::RemoveCreatedCallback(rvh_callback_);
+  package_->UnloadLibrary();
 }
 
 #if !defined(OS_MACOSX)

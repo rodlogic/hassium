@@ -32,6 +32,7 @@
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "base/debug/trace_event.h"
 #include "third_party/zlib/google/zip.h"
 #include "content/nw/src/common/shell_switches.h"
 #include "content/public/common/content_switches.h"
@@ -44,6 +45,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "base/json/json_string_value_serializer.h"
 
 bool IsSwitch(const CommandLine::StringType& string,
               CommandLine::StringType* switch_string,
@@ -53,6 +55,14 @@ namespace nw {
 
 // Separator for string of |chromium_args| from |manifest|.
 const char kChromiumArgsSeparator[] = " ";
+
+#if defined(OS_MACOSX)
+#define SHARED_LIB_EXT ".so"
+#elif defined(OS_POSIX)
+#define SHARED_LIB_EXT ".so" // or should it be dylib?
+#elif defined(OS_WIN)
+#define SHARED_LIB_EXT ".dll"
+#endif
 
 namespace {
 
@@ -255,40 +265,56 @@ bool Package::InitFromPath() {
   // path_/package.json
   FilePath manifest_path = path_.AppendASCII("package.json");
   manifest_path = MakeAbsoluteFilePath(manifest_path);
-  if (!base::PathExists(manifest_path)) {
-    if (!self_extract())
-      ReportError("Invalid package",
-                  "There is no 'package.json' in the package, please make "
-                  "sure the 'package.json' is in the root of the package.");
-    return false;
+  if (base::PathExists(manifest_path)) {
+	  // Parse file.
+	  std::string error;
+	  JSONFileValueSerializer serializer(manifest_path);
+	  scoped_ptr<Value> root(serializer.Deserialize(NULL, &error));
+	  if (!root.get()) {
+	    ReportError("Unable to parse package.json",
+	                error.empty() ?
+	                    "Failed to read the manifest file: " +
+	                        manifest_path.AsUTF8Unsafe() :
+	                    error);
+	    return false;
+	  } else if (!root->IsType(Value::TYPE_DICTIONARY)) {
+	    ReportError("Invalid package.json",
+	                "package.json's content should be a object type.");
+	    return false;
+	  }
+
+	  // Save result in global
+	  root_.reset(static_cast<DictionaryValue*>(root.release()));
+
+	  // Save origin package info
+	  // Since we will change some value in root_,
+	  // We need to catch the origin value of package.json
+	  package_string_ = "";
+	  JSONStringValueSerializer stringSerializer(&package_string_);
+	  stringSerializer.Serialize(*root_);
   }
 
-  // Parse file.
-  std::string error;
-  JSONFileValueSerializer serializer(manifest_path);
-  scoped_ptr<Value> root(serializer.Deserialize(NULL, &error));
-  if (!root.get()) {
-    ReportError("Unable to parse package.json",
-                error.empty() ?
-                    "Failed to read the manifest file: " +
-                        manifest_path.AsUTF8Unsafe() :
-                    error);
-    return false;
-  } else if (!root->IsType(Value::TYPE_DICTIONARY)) {
-    ReportError("Invalid package.json",
-                "package.json's content should be a object type.");
-    return false;
+  FilePath library_path = path_.AppendASCII("package").AddExtension(std::string(SHARED_LIB_EXT));
+  manifest_path = MakeAbsoluteFilePath(library_path);
+  if (base::PathExists(library_path)) {
+//	  library = ConvertToAbsoutePath(library_path);
+	  if( LoadLibrary(library_path) ){
+		  if( InitLibrary(path(), package_string_) ){
+			  std::string error;
+			  scoped_ptr<Value> newRoot(JSONStringValueSerializer(package_string_).Deserialize(NULL, &error));
+			  if (!newRoot.get()) {
+			    ReportError("Unable to package manifest library", "Failed fo load the manifest library " + library_path.AsUTF8Unsafe());
+			    return false;
+			  } else if (!newRoot->IsType(Value::TYPE_DICTIONARY)) {
+			    ReportError("Invalid JSON",
+			                "Package library returned invalid JSON content.");
+			    return false;
+			  }
+			  // Save result in global
+			  root_.reset(static_cast<DictionaryValue*>(newRoot.release()));
+		  }
+	  }
   }
-
-  // Save result in global
-  root_.reset(static_cast<DictionaryValue*>(root.release()));
-
-  // Save origin package info
-  // Since we will change some value in root_,
-  // We need to catch the origin value of package.json
-  package_string_ = "";
-  JSONStringValueSerializer stringSerializer(&package_string_);
-  stringSerializer.Serialize(*root_);
 
   // Check fields
   const char* required_fields[] = {
@@ -326,6 +352,7 @@ bool Package::InitFromPath() {
   ReadJsFlags();
 
   RelativePathToURI(path_, this->root());
+
   return true;
 }
 
@@ -469,6 +496,74 @@ void Package::ReportError(const std::string& title,
   error_page_url_ = "data:text/html;charset=utf-8," + 
       net::EscapeQueryParamValue(
           ReplaceStringPlaceholders(template_html, subst, NULL), false);
+}
+
+GURL Package::base_url() {
+	std::string base_url;
+	if (root()->GetString(switches::kmBaseUrl, &base_url))
+		return GURL(base_url);
+    VLOG(0) << "Base URL not specificed for the app protocol: ";
+	return GURL();
+}
+
+
+typedef const void* (*HsInit)(const int *argc, const char **argv[]);
+typedef const void* (*HsExit)();
+typedef char* (*HsInitPackage)(const char*, const char *);
+
+bool Package::LoadLibrary(const FilePath& libraryPath){
+	std::string *error = NULL;
+    VLOG(0) << "Package load library: " << libraryPath.AsUTF8Unsafe();
+//    _appLibrary = base::LoadNativeLibrary(libraryPath, &error);
+    _appLibrary = base::LoadNativeLibrary(libraryPath, error);
+	if( !_appLibrary ){
+	    VLOG(0) << "Package load error: " << *error;
+		ReportError("Cannot load library", "Failed to load library: " + path_.AsUTF8Unsafe() + *error);
+		return false;
+	}
+	else {
+	    VLOG(0) << "Package init library: " << libraryPath.AsUTF8Unsafe();
+		HsInit hsInit = reinterpret_cast<HsInit>(
+		          base::GetFunctionPointerFromNativeLibrary(_appLibrary, "hs_init"));
+		if( hsInit )
+			hsInit(NULL, NULL);
+		else
+			return false;
+	}
+	return true;
+}
+
+bool Package::InitLibrary(const FilePath& path, std::string& main_url){
+	HsInitPackage hsInitPackage = reinterpret_cast<HsInitPackage>(
+	          base::GetFunctionPointerFromNativeLibrary(_appLibrary, "init_library"));
+	if( hsInitPackage ){
+		const char* orig_url = main_url.c_str();
+		char* cstr = hsInitPackage(path.AsUTF8Unsafe().c_str(), orig_url);
+		if( cstr ){
+			main_url.assign((const char*)cstr);
+			if( cstr != orig_url )
+				free(cstr);
+		}
+		return true;
+	}
+	else {
+		ReportError("Cannot find getManifest", "Make sure the shared library has a char* getManifest(char *) function!");
+
+	}
+	return false;
+}
+
+void Package::UnloadLibrary(){
+	if( _appLibrary ){
+	    VLOG(0) << "Package exit library";
+		HsExit hsExit = reinterpret_cast<HsExit>(
+		          base::GetFunctionPointerFromNativeLibrary(_appLibrary, "hs_exit"));
+		if( hsExit )
+			hsExit();
+
+	    VLOG(0) << "Package unload library";
+		base::UnloadNativeLibrary(_appLibrary);
+	}
 }
 
 }  // namespace nw

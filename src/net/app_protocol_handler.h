@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "url/gurl.h"
 #include "net/url_request/url_request_job_factory.h"
 
 class GURL;
@@ -22,13 +23,15 @@ class URLRequestJob;
 class AppProtocolHandler :
     public URLRequestJobFactory::ProtocolHandler {
  public:
-  AppProtocolHandler(const base::FilePath& root);
+  AppProtocolHandler(const base::FilePath& root, const GURL& base_url);
   virtual URLRequestJob* MaybeCreateJob(
       URLRequest* request, NetworkDelegate* network_delegate) const OVERRIDE;
   virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE;
 
  private:
   base::FilePath root_path_;
+  GURL base_url_;
+
   DISALLOW_COPY_AND_ASSIGN(AppProtocolHandler);
 };
 

@@ -51,6 +51,8 @@ const char kmWindow[] = "window";
 const char kmChromiumArgs[] = "chromium-args";
 const char kmJsFlags[] = "js-flags";
 
+const char kmBaseUrl[] = "base-url";
+
 // Allows only one instance of the app.
 const char kmSingleInstance[] = "single-instance";
 
