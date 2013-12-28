@@ -57,6 +57,7 @@
         '<(DEPTH)/breakpad/src',
         '<(SHARED_INTERMEDIATE_DIR)/blink',
         '<(SHARED_INTERMEDIATE_DIR)/blink/bindings',
+	'hassium-adapter/c-src',
       ],
       'cflags_cc': [
         '-Wno-error=c++0x-compat',

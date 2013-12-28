@@ -159,7 +159,7 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
       ignore_certificate_errors_,
       GetPath(),
 //      package_->path(),
-      _package,
+      package_,
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO),
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE),
       protocol_handlers, this);
