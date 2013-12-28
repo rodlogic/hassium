@@ -316,6 +316,15 @@ bool Package::InitFromPath() {
 	  }
   }
 
+  // path_/package.json
+  if ( root_ == NULL ) {
+	  if (!self_extract())
+		  ReportError("Invalid package",
+				"There is no 'package.json' in the package, please make "
+				"sure the 'package.json' is in the root of the package.");
+  	  return false;
+  }
+
   // Check fields
   const char* required_fields[] = {
     switches::kmMain,
